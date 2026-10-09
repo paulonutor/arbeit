@@ -1,0 +1,7 @@
+node_modules
+dist
+.next
+.arbeit
+package-lock.json
+ARBEIT_PLAN.md
+ARBEIT_PROMPT.md
