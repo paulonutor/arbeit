@@ -1,8 +1,12 @@
-# First slice validation
+# Validation record
+
+Sections are dated evidence from the time they were written. Sections up to "Hono refactor and execution drafts" describe the first slice on the former Next.js stack and are kept as history. For the current state, see "Current state" at the end.
+
+## First slice validation (historical, Next.js stack)
 
 Validated on 2026-10-09 with Node 24.21.0, Next 16.4.0 and Codex 0.149.1.
 
-## Automated checks
+### Automated checks
 
 - 13 regression tests passed via npm test.
 - npm run typecheck passed.
@@ -14,7 +18,7 @@ The suite covers actual-event normalization and privacy filtering, explicit-ID c
 
 These tests use local fixture processes; they do not establish native provider support on other systems.
 
-## Real provider and browser flow
+### Real provider and browser flow
 
 Registered the Arbeit repository through the browser, created a session, and sent a read-only prompt containing ARBEIT-LIVE-902. Codex executed cat README.md and emitted command start/completion plus assistant messages. The first attempt completed with exit code 0. A browser refresh retained the full conversation and actual activity. A follow-up asking for the marker used the same provider session ID and returned ARBEIT-LIVE-902. The second attempt also completed with exit code 0.
 
@@ -27,7 +31,7 @@ The database recorded attempt-local usage:
 
 A production-server restart retained both attempts and the conversation. Browser console inspection found no errors. Narrow-screen details and the desktop layout were inspected, including explicit unavailable model/quota values.
 
-## Limits
+### Limits
 
 Live cancellation/recovery was tested during Phase 0; application cancellation, process-tree cleanup and timeout were exercised through regression fixtures. The browser Stop button is wired to that tested API. No live editing, native decisions, artifact serving, Claude adapter or quota adapter is implemented in this slice. Missing terminal output is a failed attempt, not success.
 
@@ -60,3 +64,12 @@ The user replaced the reference on 2026-10-09 and requested a close match. The r
 Visual checks covered desktop and 375 × 812 mobile, search, project switching, task actions, settings, navigation/details drawers and the real saved package.json execution. Mobile document width remained 375px. Opening a draft and typing an objective left the session count at five. No provider execution was started during design validation.
 
 All 28 tests pass, including calendar grouping, observed tool duration and latest persisted status coverage. Typecheck, ESLint, formatting and the Vite build pass. The production build emits a non-failing bundle-size advisory.
+
+## Current state
+
+Executed on 2026-10-12 in a Linux cloud container on branch claude/arbeit-first-project-checklist-htqzr4 after npm ci. The Codex CLI was not installed there, so no provider execution was run.
+
+- npm run typecheck, npm run lint, npm run format:check and npm run build passed. The build reports the existing non-failing bundle-size advisory.
+- npm test ran 29 tests: 28 passed and 1 failed. The failure is "cancellation kills descendants even if the provider exits first" (tests/runtime.test.ts, the final assertion that the descendant process is gone). It is unresolved. A likely cause is the container not reaping killed processes, which would leave a zombie that still answers kill -0, but that is not confirmed. Re-run on the development machine; if it fails there too, treat it as a process-group cleanup defect.
+
+The Trello cards for learning v1 (versioned prompts, outcomes and lessons) and quota gating are in Playtest / Review, but this branch contains no corresponding source, tests or documentation. Evidence for those cards, and for workflow routing, is not recorded here. Live Trello access and unattended execution against a real card remain unverified.

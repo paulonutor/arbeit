@@ -24,12 +24,13 @@ token consumption and preserving the capabilities of existing coding agents.
 
 ## 2. Technology Stack
 
-Preferred starting point:
+Preferred starting point (the first slice used Next.js; the project moved to
+Hono and Vite, see `docs/architecture.md`):
 
 | Component | Technology |
 |---|---|
-| Application | Next.js + TypeScript |
-| UI | React |
+| Application | Hono on Node.js + TypeScript |
+| UI | React + Vite |
 | Styling | Tailwind CSS |
 | Components | shadcn/ui |
 | Persistence | SQLite |
