@@ -11,6 +11,8 @@ import { Dispatcher } from "./dispatcher";
 import { Trello, trelloId } from "./trello";
 import { availableChecks } from "./workspace";
 import type { Mode, WorkflowConfig } from "./types";
+import { isProvider } from "./providers";
+import type { ProviderSetup } from "./setup";
 import { Runtime } from "./runtime";
 
 async function body(c: Context): Promise<Record<string, unknown>> {
@@ -44,7 +46,17 @@ async function body(c: Context): Promise<Record<string, unknown>> {
   }
 }
 
-export function api(runtime: Runtime, port: number, dispatcher?: Dispatcher) {
+function providerField(value: unknown) {
+  if (!isProvider(value)) throw new RequestError("Unknown provider.");
+  return value;
+}
+
+export function api(
+  runtime: Runtime,
+  port: number,
+  dispatcher?: Dispatcher,
+  setup?: ProviderSetup,
+) {
   const app = new Hono();
   const { store } = runtime;
   app.use("*", async (c, next) => {
@@ -91,6 +103,7 @@ export function api(runtime: Runtime, port: number, dispatcher?: Dispatcher) {
           textField(input.path, "workspace path", 4096),
         ),
         model,
+        input.provider === undefined ? "codex" : providerField(input.provider),
       ),
       201,
     );
@@ -137,8 +150,26 @@ export function api(runtime: Runtime, port: number, dispatcher?: Dispatcher) {
         input.mode as Mode,
         [...new Set(checks)] as string[],
         config,
+        input.provider === undefined
+          ? undefined
+          : providerField(input.provider),
       ),
     );
+  });
+  app.get("/api/providers", async (c) => {
+    if (!setup) throw new RequestError("Provider setup unavailable.", 503);
+    return c.json({ providers: await setup.status() });
+  });
+  app.post("/api/providers/:id", async (c) => {
+    if (!setup) throw new RequestError("Provider setup unavailable.", 503);
+    const id = providerField(c.req.param("id"));
+    const input = await body(c);
+    if (input.action === "install") setup.install(id, runtime.isBusy);
+    else if (input.action === "login") setup.login(id);
+    else if (input.action === "cancel") setup.cancel(id);
+    else throw new RequestError("Invalid provider action.");
+    const [status] = await setup.status(id);
+    return c.json(status, 202);
   });
   app.get("/api/trello/boards/:id", async (c) => {
     const source = dispatcher?.source ?? new Trello();

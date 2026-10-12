@@ -7,6 +7,7 @@ import { Trello } from "./src/lib/trello";
 import { Dispatcher } from "./src/lib/dispatcher";
 import { Store } from "./src/lib/store";
 import { Runtime } from "./src/lib/runtime";
+import { ProviderSetup } from "./src/lib/setup";
 import { api } from "./src/lib/http";
 import { checkOrigin } from "./src/lib/security";
 
@@ -18,12 +19,14 @@ async function main() {
   const dataDir = resolve(process.env.ARBEIT_DATA_DIR ?? ".arbeit");
   mkdirSync(dataDir, { recursive: true, mode: 0o700 });
   const store = new Store(resolve(dataDir, "arbeit.sqlite"));
+  const setup = new ProviderSetup({ directory: resolve(dataDir, "providers") });
   const runtime = new Runtime(store, root, {
     worktreeRoot: resolve(dataDir, "worktrees"),
+    managedBin: setup.managedBin,
   });
   const dispatcher = new Dispatcher(runtime, new Trello());
   dispatcher.start();
-  const app = api(runtime, port, dispatcher);
+  const app = api(runtime, port, dispatcher, setup);
   const server = createServer();
   const production = process.env.NODE_ENV === "production";
   let vite: import("vite").ViteDevServer | undefined;
@@ -64,6 +67,7 @@ async function main() {
     if (closing) return;
     closing = true;
     server.close();
+    setup.shutdown();
     await dispatcher.stop();
     await runtime.shutdown();
     server.closeAllConnections();

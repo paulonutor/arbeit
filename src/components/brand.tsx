@@ -35,3 +35,36 @@ export function CodexMark({ size = 20 }: { size?: number }) {
     </svg>
   );
 }
+export function ClaudeMark({ size = 20 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      aria-hidden="true"
+    >
+      {Array.from({ length: 8 }, (_, i) => (
+        <path key={i} transform={`rotate(${i * 45} 12 12)`} d="M12 3.5v6" />
+      ))}
+    </svg>
+  );
+}
+export function ProviderMark({
+  provider,
+  size,
+}: {
+  provider: "codex" | "claude";
+  size?: number;
+}) {
+  return provider === "claude" ? (
+    <ClaudeMark size={size} />
+  ) : (
+    <CodexMark size={size} />
+  );
+}
+export const providerLabel = (provider: "codex" | "claude") =>
+  provider === "claude" ? "Claude Code" : "Codex CLI";

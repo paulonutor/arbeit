@@ -1,10 +1,10 @@
 # Arbeit
 
-A local automatic development system with Hono, React/Vite and SQLite. Codex executes objectives in isolated Git worktrees; Trello supplies eligible tasks. The interface shows actual activity, checks, diffs and decisions.
+A local automatic development system with Hono, React/Vite and SQLite. Codex CLI or Claude Code executes objectives in isolated Git worktrees; Trello supplies eligible tasks. The interface shows actual activity, checks, diffs and decisions.
 
 ## Run locally
 
-Requires Node.js 24 or later and an authenticated Codex CLI. The tested version is Codex 0.149.1. Authenticate with the provider CLI.
+Requires Node.js 24 or later and at least one coding agent CLI: Codex CLI (tested 0.149.1) or Claude Code (tested 2.1.296). Project settings lists both agents with their install and sign-in state. Install runs `npm install` for the official package into `.arbeit/providers`, never globally and never through a shell, and Sign in starts the provider's own login (`codex login`, `claude auth login`) and shows the sign-in page it prints. Arbeit never receives or stores credentials; `ANTHROPIC_API_KEY` and similar variables in the server environment are passed through to the CLI. An existing install on `PATH` is used first. Automatic install is not available on Windows. Choose the agent per project; each session keeps the agent that started it.
 
 ```sh
 npm ci
@@ -26,7 +26,7 @@ npm start
 
 Open Project settings from the project selector. Opt into isolated editing and select required npm checks. Editing requires a clean Git repository with a committed HEAD. Each new editing session gets a retained `codex/arbeit-…` branch and worktree under `.arbeit/worktrees`. Existing read-only sessions retain their policy; start a new session after opting in.
 
-Codex runs with workspace-write sandbox, network access disabled and approval policy `never`. Work outside that policy cannot receive automatic permission. Arbeit records the real diff and completed check commands. A schema-constrained result distinguishes ready for review, blocked and needs input. Answer a question with another execution in the same session.
+Codex runs with workspace-write sandbox, network access disabled and approval policy `never`. Claude Code runs with `--permission-mode dontAsk` and an explicit allow list: Read, Grep and Glob when read-only; additionally Edit, Write and Bash restricted to the exact required check commands when editing. Anything else is denied, not prompted. Claude's Bash tool is not wrapped in an OS sandbox by Arbeit, so the allow list is the boundary. Work outside that policy cannot receive automatic permission. Arbeit records the real diff and completed check commands. A schema-constrained result distinguishes ready for review, blocked and needs input. Answer a question with another execution in the same session.
 
 Changes remain in the worktree for review. Arbeit does not merge or push them. Required checks must actually complete successfully before a task becomes ready for review. The checkout and installed tools are trusted; inspect the diff, including changes to tests and scripts.
 

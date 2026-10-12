@@ -12,7 +12,7 @@ import {
 import type { Review, Session } from "./types";
 import { Store } from "./store";
 import { RequestError, workspacePath, textField } from "./security";
-import { codexArgs, normalizeCodex } from "./codex";
+import { adapter, resolveBinary } from "./providers";
 
 interface Running {
   child: ChildProcess;
@@ -31,6 +31,8 @@ export class Runtime {
       timeoutMs?: number;
       graceMs?: number;
       worktreeRoot?: string;
+      /** bin directory of Arbeit-managed provider installs */
+      managedBin?: string;
     } = {},
   ) {
     store.recover();
@@ -78,27 +80,25 @@ export class Runtime {
           resolve(worktreeRoot, session.id))
     )
       throw new RequestError("Execution worktree is unavailable.");
-    let schema: string | undefined;
+    const provider = adapter(session.provider);
+    let schema: { json: string; path: string } | undefined;
     if (writing) {
       mkdirSync(worktreeRoot, { recursive: true, mode: 0o700 });
-      schema = resolve(worktreeRoot, "result-schema.json");
-      writeFileSync(
-        schema,
-        JSON.stringify({
-          type: "object",
-          additionalProperties: false,
-          required: ["outcome", "summary", "question"],
-          properties: {
-            outcome: {
-              type: "string",
-              enum: ["ready_for_review", "needs_input", "blocked"],
-            },
-            summary: { type: "string" },
-            question: { type: ["string", "null"] },
+      const json = JSON.stringify({
+        type: "object",
+        additionalProperties: false,
+        required: ["outcome", "summary", "question"],
+        properties: {
+          outcome: {
+            type: "string",
+            enum: ["ready_for_review", "needs_input", "blocked"],
           },
-        }),
-        { mode: 0o600 },
-      );
+          summary: { type: "string" },
+          question: { type: ["string", "null"] },
+        },
+      });
+      schema = { json, path: resolve(worktreeRoot, "result-schema.json") };
+      writeFileSync(schema.path, json, { mode: 0o600 });
     }
     let executionId: string;
     try {
@@ -125,16 +125,40 @@ export class Runtime {
       total = 0;
     let stopped: "cancelled" | "timed_out" | "failed" | null = null;
     const decoder = new StringDecoder("utf8");
+    const parse = provider.parser();
+    const readContract = (value: unknown) => {
+      const candidate = value as Record<string, unknown> | null;
+      if (
+        candidate &&
+        ["ready_for_review", "needs_input", "blocked"].includes(
+          candidate.outcome as string,
+        ) &&
+        typeof candidate.summary === "string" &&
+        (candidate.question === null || typeof candidate.question === "string")
+      ) {
+        contract = {
+          outcome: candidate.outcome as Review["outcome"],
+          summary: candidate.summary.slice(0, 16000),
+          question:
+            (candidate.question as string | null)?.slice(0, 4000) ?? null,
+        };
+        return true;
+      }
+      return false;
+    };
     const child = spawn(
-      this.options.command ?? "codex",
+      this.options.command ??
+        resolveBinary(provider.id, this.options.managedBin) ??
+        provider.binary,
       [
         ...(this.options.prefix ?? []),
-        ...codexArgs(
-          session.providerSessionId,
-          project.model,
-          session.mode,
+        ...provider.args({
+          providerSessionId: session.providerSessionId,
+          model: project.model,
+          mode: session.mode,
+          checks: project.checks,
           schema,
-        ),
+        }),
       ],
       {
         cwd: session.workspace ?? project.path,
@@ -166,57 +190,45 @@ export class Runtime {
     const consume = (line: string) => {
       if (!line.trim() || invalid || stopped) return;
       try {
-        const event = JSON.parse(line);
-        if (
-          event.type === "thread.started" &&
-          typeof event.thread_id === "string" &&
-          /^[a-zA-Z0-9-]{1,100}$/.test(event.thread_id)
-        )
-          this.store.providerId(sessionId, event.thread_id);
-        if (event.type === "turn.completed") success = true;
-        if (["error", "turn.failed"].includes(event.type))
-          providerFailed = true;
-        if (
-          writing &&
-          event.type === "item.completed" &&
-          event.item?.type === "command_execution"
-        ) {
-          const name = checkCommand(event.item.command, project.checks);
+        const observed = parse(JSON.parse(line));
+        if (observed.providerSessionId)
+          this.store.providerId(sessionId, observed.providerSessionId);
+        if (observed.succeeded) success = true;
+        if (observed.failed) providerFailed = true;
+        if (writing && observed.command) {
+          const name = checkCommand(observed.command.text, project.checks);
           if (name) {
-            const exitCode =
-              typeof event.item.exit_code === "number"
-                ? event.item.exit_code
-                : null;
-            const status =
-              event.item.status === "completed" && exitCode === 0
-                ? "passed"
-                : "failed";
-            checkResults.set(name, { exitCode, status });
+            const status = observed.command.ok ? "passed" : "failed";
+            checkResults.set(name, {
+              exitCode: observed.command.exitCode,
+              status,
+            });
             this.store.event(sessionId, executionId, "check.completed", {
               name,
               status,
-              exitCode,
+              exitCode: observed.command.exitCode,
             });
           }
         }
-        for (const e of normalizeCodex(event)) {
-          if (writing && e.type === "message.agent") {
+        if (
+          writing &&
+          observed.structured !== undefined &&
+          !contract &&
+          readContract(observed.structured)
+        )
+          this.store.event(sessionId, executionId, "message.agent", {
+            providerItemId: "structured-result",
+            text: (contract as unknown as Review).summary,
+          });
+        for (const e of observed.events) {
+          if (
+            writing &&
+            provider.contractInMessage &&
+            e.type === "message.agent"
+          ) {
             try {
-              const value = JSON.parse(String(e.data.text));
-              if (
-                ["ready_for_review", "needs_input", "blocked"].includes(
-                  value.outcome,
-                ) &&
-                typeof value.summary === "string" &&
-                (value.question === null || typeof value.question === "string")
-              ) {
-                contract = {
-                  outcome: value.outcome,
-                  summary: value.summary.slice(0, 16000),
-                  question: value.question?.slice(0, 4000) ?? null,
-                };
-                e.data.text = value.summary;
-              }
+              if (readContract(JSON.parse(String(e.data.text))))
+                e.data.text = (contract as unknown as Review).summary;
             } catch {
               /* Intermediate assistant text is not a decision contract. */
             }
@@ -328,10 +340,10 @@ export class Runtime {
         ...(status === "failed"
           ? {
               message: spawnError
-                ? "Codex could not start. Check installation and login."
+                ? `${provider.label} could not start. Check installation and login.`
                 : invalid
                   ? "Provider returned an invalid or oversized event stream."
-                  : "Codex execution failed. Check provider login, model access and workspace permissions.",
+                  : `${provider.label} execution failed. Check provider login, model access and workspace permissions.`,
             }
           : {}),
       });

@@ -4,7 +4,10 @@ import { X, Play, Square, Settings, ExternalLink } from "lucide-react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { request } from "@/lib/client";
+import { ProviderSetup } from "./provider-setup";
+import { providerLabel } from "./brand";
 import type {
+  Provider,
   Session,
   Mode,
   Project,
@@ -30,6 +33,7 @@ export function ProjectSettings({
   onSaved: () => void;
 }) {
   const [mode, setMode] = useState<Mode>("read-only");
+  const [provider, setProvider] = useState<Provider>("codex");
   const [checks, setChecks] = useState<string[]>([]);
   const [available, setAvailable] = useState<string[]>([]);
   const [configured, setConfigured] = useState(false);
@@ -49,6 +53,7 @@ export function ProjectSettings({
       .then((data) => {
         if (cancelled) return;
         setMode(data.project.mode);
+        setProvider(data.project.provider);
         setChecks(data.project.checks);
         setAvailable(data.checks);
         setConfigured(data.trelloConfigured);
@@ -104,11 +109,31 @@ export function ProjectSettings({
                 await request(`/api/projects/${projectId}/settings`, {
                   mode,
                   checks,
+                  provider,
                 });
                 onSaved();
               });
             }}
           >
+            <label>
+              Coding agent
+              <select
+                value={provider}
+                onChange={(event) =>
+                  setProvider(event.target.value as Provider)
+                }
+              >
+                {(["codex", "claude"] as const).map((id) => (
+                  <option key={id} value={id}>
+                    {providerLabel(id)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <p className="field-note">
+              Applies to new sessions. Existing sessions keep the agent that
+              started them.
+            </p>
             <label>
               Execution policy
               <select
@@ -152,9 +177,11 @@ export function ProjectSettings({
               )}
             </fieldset>
             <Button type="submit" disabled={busy}>
-              Save execution policy
+              Save settings
             </Button>
           </form>
+          <div className="settings-divider" />
+          <ProviderSetup selected={provider} />
           <div className="settings-divider" />
           <h3>Trello workflow</h3>
           {!configured ? (
@@ -658,7 +685,10 @@ export function ProjectDashboard({
           <button key={session.id} onClick={() => onSession(session.id)}>
             <span>
               <strong>{session.title}</strong>
-              <small>Codex CLI · {session.latestStatus ?? "Draft"}</small>
+              <small>
+                {providerLabel(session.provider)} ·{" "}
+                {session.latestStatus ?? "Draft"}
+              </small>
             </span>
             <time>{new Date(session.createdAt).toLocaleDateString()}</time>
           </button>

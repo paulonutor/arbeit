@@ -37,13 +37,19 @@ import {
 } from "@/components/project-workflow";
 import Markdown from "react-markdown";
 import { Select, DropdownMenu, Dialog } from "radix-ui";
-import { ArbeitMark, CodexMark } from "@/components/brand";
+import { ArbeitMark, ProviderMark, providerLabel } from "@/components/brand";
 import { sessionGroup, statusLabel, toolDuration } from "@/lib/presentation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import type { AgentEvent, Project, Session, SessionDetail } from "@/lib/types";
+import type {
+  AgentEvent,
+  Project,
+  Provider,
+  Session,
+  SessionDetail,
+} from "@/lib/types";
 
 function mergeEvents(previous: AgentEvent[], incoming: AgentEvent[]) {
   return [
@@ -78,6 +84,7 @@ export default function ControlCenter() {
   const [name, setName] = useState("");
   const [path, setPath] = useState("");
   const [model, setModel] = useState("");
+  const [newProvider, setNewProvider] = useState<Provider>("codex");
   const [prompt, setPrompt] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -250,6 +257,9 @@ export default function ControlCenter() {
   });
   const usage = events.filter((e) => e.type === "usage").at(-1)?.data;
   const project = projects.find((p) => p.id === projectId);
+  const activeProvider =
+    detail?.session.provider ?? project?.provider ?? "codex";
+  const agentName = providerLabel(activeProvider);
   const toolCalls = events.filter((e) => e.type === "tool.started").length;
   const completedTools = new Set(
     events
@@ -356,7 +366,8 @@ export default function ControlCenter() {
                   >
                     <span>{session.title}</span>
                     <small>
-                      Codex CLI · {statusLabel(session.latestStatus ?? "draft")}
+                      {providerLabel(session.provider)} ·{" "}
+                      {statusLabel(session.latestStatus ?? "draft")}
                     </small>
                   </button>
                 ))}
@@ -543,7 +554,8 @@ export default function ControlCenter() {
                   <span className="session-copy">
                     <span className="session-title">{session.title}</span>
                     <span className="session-provider">
-                      Codex CLI · {statusLabel(session.latestStatus ?? "draft")}
+                      {providerLabel(session.provider)} ·{" "}
+                      {statusLabel(session.latestStatus ?? "draft")}
                     </span>
                   </span>
                   <time>
@@ -652,7 +664,8 @@ export default function ControlCenter() {
               </button>
               <div className="provider-control">
                 <span>
-                  <CodexMark size={19} /> Codex CLI
+                  <ProviderMark provider={activeProvider} size={19} />{" "}
+                  {agentName}
                 </span>
                 <DropdownMenu.Root>
                   <DropdownMenu.Trigger asChild>
@@ -762,6 +775,7 @@ export default function ControlCenter() {
                         name,
                         path: path || root,
                         model,
+                        provider: newProvider,
                       });
                       await refresh();
                       createSession();
@@ -790,6 +804,21 @@ export default function ControlCenter() {
                       required
                     />
                     <span className="field-note">Allowed root: {root}</span>
+                  </label>
+                  <label>
+                    Coding agent
+                    <select
+                      value={newProvider}
+                      onChange={(e) =>
+                        setNewProvider(e.target.value as Provider)
+                      }
+                    >
+                      <option value="codex">Codex CLI</option>
+                      <option value="claude">Claude Code</option>
+                    </select>
+                    <span className="field-note">
+                      Install and sign in from Project settings.
+                    </span>
                   </label>
                   <label>
                     Model <span className="muted">optional</span>
@@ -842,14 +871,12 @@ export default function ControlCenter() {
                           {event.type === "message.user" ? (
                             <UserRound size={18} />
                           ) : (
-                            <CodexMark size={25} />
+                            <ProviderMark provider={activeProvider} size={25} />
                           )}
                         </div>
                         <div className="message-heading">
                           <span>
-                            {event.type === "message.user"
-                              ? "You"
-                              : "Codex CLI"}
+                            {event.type === "message.user" ? "You" : agentName}
                           </span>
                           <time>
                             {new Date(event.timestamp).toLocaleTimeString([], {
@@ -939,7 +966,7 @@ export default function ControlCenter() {
                   {running && (
                     <div className="running-row">
                       <span className="pulse-dot" />
-                      Codex is running
+                      {agentName} is running
                     </div>
                   )}
                   {latest?.review && (
@@ -1019,7 +1046,7 @@ export default function ControlCenter() {
                       running
                         ? "Execution in progress…"
                         : selected
-                          ? "Add an instruction for Codex CLI…"
+                          ? `Add an instruction for ${agentName}…`
                           : "Describe the work to execute…"
                     }
                     value={prompt}
@@ -1091,7 +1118,8 @@ export default function ControlCenter() {
                     </div>
                     <span>
                       <Terminal size={13} />
-                      Codex<span className="composer-separator">/</span>
+                      {activeProvider === "claude" ? "Claude" : "Codex"}
+                      <span className="composer-separator">/</span>
                       {policy === "workspace-write"
                         ? "Worktree editing"
                         : "Read only"}
@@ -1167,12 +1195,12 @@ export default function ControlCenter() {
                     </dt>
                     <dd>{elapsed}</dd>
                     <dt>
-                      <CodexMark size={18} />
+                      <ProviderMark provider={activeProvider} size={18} />
                       Provider
                     </dt>
                     <dd className="provider-value">
-                      <CodexMark size={18} />
-                      Codex CLI
+                      <ProviderMark provider={activeProvider} size={18} />
+                      {agentName}
                     </dd>
                     <dt>
                       <Cpu size={17} />

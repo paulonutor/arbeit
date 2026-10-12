@@ -5,10 +5,12 @@ export type Status =
   | "cancelled"
   | "timed_out"
   | "interrupted";
+export type Provider = "codex" | "claude";
 export interface Project {
   id: string;
   name: string;
   path: string;
+  provider: Provider;
   model: string | null;
   mode: Mode;
   checks: string[];
@@ -18,7 +20,7 @@ export interface Session {
   id: string;
   projectId: string;
   title: string;
-  provider: "codex";
+  provider: Provider;
   providerSessionId: string | null;
   createdAt: string;
   mode: Mode;
@@ -104,4 +106,24 @@ export interface TrelloCard {
     name: string;
     checkItems: { name: string; state: string }[];
   }[];
+}
+
+export interface ProviderJob {
+  kind: "install" | "login";
+  state: "running" | "succeeded" | "failed" | "cancelled";
+  startedAt: string;
+  message: string | null;
+  url: string | null;
+}
+export interface ProviderStatus {
+  id: Provider;
+  label: string;
+  installed: boolean;
+  version: string | null;
+  managed: boolean;
+  authenticated: boolean | null;
+  authMethod: string | null;
+  package: string;
+  installSupported: boolean;
+  job: ProviderJob | null;
 }

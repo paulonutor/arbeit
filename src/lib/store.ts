@@ -11,6 +11,7 @@ import type {
   WorkflowConfig,
   TaskReceipt,
   Review,
+  Provider,
 } from "./types";
 import { RequestError } from "./security";
 
@@ -28,6 +29,7 @@ export class Store {
       CREATE INDEX IF NOT EXISTS session_events ON events(sessionId, id);`);
     for (const [table, name, definition] of [
       ["projects", "mode", "TEXT NOT NULL DEFAULT 'read-only'"],
+      ["projects", "provider", "TEXT NOT NULL DEFAULT 'codex'"],
       ["projects", "checks", "TEXT NOT NULL DEFAULT '[]'"],
       ["projects", "workflow", "TEXT"],
       ["sessions", "mode", "TEXT NOT NULL DEFAULT 'read-only'"],
@@ -71,13 +73,20 @@ export class Store {
     if (!row) throw new RequestError("Session not found.", 404);
     return row;
   }
-  addProject(name: string, path: string, model: string | null): Project {
+  addProject(
+    name: string,
+    path: string,
+    model: string | null,
+    provider: Provider = "codex",
+  ): Project {
     if (this.projects().some((p) => p.path === path))
       throw new RequestError("Workspace is already registered.", 409);
     const id = randomUUID();
     this.db
-      .prepare("INSERT INTO projects(id,name,path,model) VALUES (?,?,?,?)")
-      .run(id, name, path, model);
+      .prepare(
+        "INSERT INTO projects(id,name,path,model,provider) VALUES (?,?,?,?,?)",
+      )
+      .run(id, name, path, model, provider);
     return this.project(id);
   }
   draftSession(projectId: string): Session {
@@ -86,7 +95,7 @@ export class Store {
       id: randomUUID(),
       projectId,
       title: "New session",
-      provider: "codex",
+      provider: this.project(projectId).provider,
       providerSessionId: null,
       createdAt: new Date().toISOString(),
       mode: this.project(projectId).mode,
@@ -197,7 +206,7 @@ export class Store {
         );
       this.event(session.id, id, "message.user", { text: prompt });
       this.event(session.id, id, "execution.started", {
-        provider: "codex",
+        provider: session.provider,
         requestedModel: model,
       });
       if (session.title === "New session")
@@ -254,14 +263,18 @@ export class Store {
     mode: Mode,
     checks: string[],
     workflow: WorkflowConfig | null,
+    provider: Provider = this.project(id).provider,
   ) {
     this.project(id);
     this.db
-      .prepare("UPDATE projects SET mode=?,checks=?,workflow=? WHERE id=?")
+      .prepare(
+        "UPDATE projects SET mode=?,checks=?,workflow=?,provider=? WHERE id=?",
+      )
       .run(
         mode,
         JSON.stringify(checks),
         workflow ? JSON.stringify(workflow) : null,
+        provider,
         id,
       );
     return this.project(id);

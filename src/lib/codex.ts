@@ -21,6 +21,7 @@ export function normalizeCodex(value: unknown): Normalized[] {
         type: "usage",
         data: {
           scope: "execution",
+          inputIncludesCached: true,
           inputTokens: count(u.input_tokens),
           outputTokens: count(u.output_tokens),
           cachedInputTokens: count(u.cached_input_tokens),
