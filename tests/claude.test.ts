@@ -395,7 +395,10 @@ if(target==='npm'){console.error('added 1 package');process.exit(mode==='npmfail
 if(args[0]==='--version'){console.log('2.1.296 (Claude Code)');process.exit(0);}
 if(args.join(' ')==='auth status'){console.log(JSON.stringify({loggedIn:mode!=='out',authMethod:'oauth_token',configDirectory:'/home/private'}));process.exit(mode==='out'?1:0);}
 if(args.join(' ')==='login status'){console.log('Logged in using ChatGPT');process.exit(0);}
-if(args.includes('login')){console.log('Open https://claude.ai/oauth/authorize?x=1 to sign in');setInterval(()=>{},1000);}`;
+if(args.includes('login')){console.log('Open https://claude.ai/oauth/authorize?x=1 to sign in');
+if(mode==='code'){process.stdout.write('Paste code here if prompted > ');
+process.stdin.once('data',d=>{const ok=d.toString().trim()==='good-code#state-123';console.log(ok?'Login successful':'Invalid code');process.exit(ok?0:1);});}
+else setInterval(()=>{},1000);}`;
 async function settled(setup: ProviderSetup, id: "claude" | "codex") {
   for (let i = 0; i < 100; i++) {
     const [status] = await setup.status(id);
@@ -557,6 +560,58 @@ test("provider API enforces origin, validates ids and actions, and stores the pr
   } finally {
     server.close();
     store.db.close();
+    rmSync(ctx.root, { recursive: true, force: true });
+  }
+});
+
+test("sign-in code is accepted only while the CLI waits, validated, and never exposed", async () => {
+  const ctx = setupFixture(tool);
+  process.env.TOOL_MODE = "code";
+  try {
+    assert.throws(
+      () => ctx.setup.submitCode("claude", "good-code#state-123"),
+      /not waiting/,
+    );
+    ctx.setup.login("claude");
+    for (let i = 0; i < 100; i++) {
+      if ((await ctx.setup.status("claude"))[0].job?.awaitingCode) break;
+      await delay(30);
+    }
+    assert.equal((await ctx.setup.status("claude"))[0].job?.awaitingCode, true);
+    for (const bad of [
+      "",
+      "short",
+      "has space in it",
+      "x".repeat(501),
+      42,
+      null,
+    ])
+      assert.throws(
+        () => ctx.setup.submitCode("claude", bad),
+        /Invalid sign-in code/,
+      );
+    const job = ctx.setup.submitCode("claude", " good-code#state-123 ");
+    assert.equal(job.awaitingCode, false);
+    assert.ok(!JSON.stringify(job).includes("good-code"));
+    assert.throws(
+      () => ctx.setup.submitCode("claude", "good-code#state-123"),
+      /not waiting/,
+    );
+    const done = await settled(ctx.setup, "claude");
+    assert.equal(done.job?.state, "succeeded");
+    assert.ok(!JSON.stringify(done).includes("good-code"));
+    ctx.setup.login("claude");
+    for (let i = 0; i < 100; i++) {
+      if ((await ctx.setup.status("claude"))[0].job?.awaitingCode) break;
+      await delay(30);
+    }
+    ctx.setup.submitCode("claude", "wrong-code-value");
+    const failed = await settled(ctx.setup, "claude");
+    assert.equal(failed.job?.state, "failed");
+    assert.ok(!JSON.stringify(failed).includes("wrong-code-value"));
+  } finally {
+    delete process.env.TOOL_MODE;
+    ctx.setup.shutdown();
     rmSync(ctx.root, { recursive: true, force: true });
   }
 });

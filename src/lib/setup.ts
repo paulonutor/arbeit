@@ -35,6 +35,8 @@ export interface Job {
   message: string | null;
   /** Sign-in page printed by the provider CLI; never a credential. */
   url: string | null;
+  /** The CLI is waiting for the code shown after browser sign-in. */
+  awaitingCode: boolean;
 }
 export interface ProviderStatus {
   id: Provider;
@@ -216,6 +218,7 @@ export class ProviderSetup {
       startedAt: new Date().toISOString(),
       message: kind === "install" ? "Installing…" : "Waiting for sign-in…",
       url: null,
+      awaitingCode: false,
     };
     this.jobs.set(id, job);
     let tail = "";
@@ -226,7 +229,7 @@ export class ProviderSetup {
         env: providerEnvironment(),
         shell: false,
         detached: process.platform !== "win32",
-        stdio: ["ignore", "pipe", "pipe"],
+        stdio: [kind === "login" ? "pipe" : "ignore", "pipe", "pipe"],
       });
     } catch {
       job.state = "failed";
@@ -247,7 +250,10 @@ export class ProviderSetup {
       // Only a bounded in-memory tail is kept; it is not persisted or logged.
       tail = (tail + chunk.toString("utf8")).slice(-4000);
       if (kind === "login" && !job.url) job.url = loginUrl(tail);
+      if (kind === "login" && /paste code here/i.test(tail))
+        job.awaitingCode = true;
     };
+    child.stdin?.on("error", () => {});
     child.stdout!.on("data", onData);
     child.stderr!.on("data", onData);
     const timer = setTimeout(() => {
@@ -265,6 +271,7 @@ export class ProviderSetup {
       if (job.state === "cancelled") return;
       if (job.state === "failed") return;
       job.url = null;
+      job.awaitingCode = false;
       if (code === 0) {
         job.state = "succeeded";
         job.message = null;
@@ -323,6 +330,32 @@ export class ProviderSetup {
     );
   }
 
+  /**
+   * Passes the code shown after browser sign-in to the CLI's stdin, for
+   * machines without a local browser callback such as containers. The code is
+   * a short-lived credential: it is validated, written once and never kept.
+   */
+  submitCode(id: Provider, value: unknown): Job {
+    const job = this.jobs.get(id);
+    if (
+      !job ||
+      job.kind !== "login" ||
+      job.state !== "running" ||
+      !job.awaitingCode ||
+      !job.child?.stdin?.writable
+    )
+      throw new RequestError("Sign-in is not waiting for a code.", 409);
+    if (
+      typeof value !== "string" ||
+      !/^[A-Za-z0-9._~#%+=-]{8,500}$/.test(value.trim())
+    )
+      throw new RequestError("Invalid sign-in code.");
+    job.child.stdin.write(`${value.trim()}\n`);
+    job.awaitingCode = false;
+    job.message = "Verifying code…";
+    return this.publicJob(id)!;
+  }
+
   cancel(id: Provider) {
     const job = this.jobs.get(id);
     if (!job || job.state !== "running" || !job.child?.pid)
@@ -330,6 +363,7 @@ export class ProviderSetup {
     job.state = "cancelled";
     job.message = "Cancelled.";
     job.url = null;
+    job.awaitingCode = false;
     try {
       if (process.platform === "win32") job.child.kill("SIGTERM");
       else process.kill(-job.child.pid, "SIGTERM");

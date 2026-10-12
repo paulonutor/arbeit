@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { ExternalLink } from "lucide-react";
 import { Button } from "./ui/button";
+import { Input } from "./ui/input";
 import { ProviderMark } from "./brand";
 import { request } from "@/lib/client";
 import type { ProviderStatus } from "@/lib/types";
@@ -40,10 +41,16 @@ export function ProviderSetup({ selected }: { selected?: string }) {
     );
     return () => clearInterval(timer);
   }, [running, load]);
-  const act = async (id: string, action: "install" | "login" | "cancel") => {
+  const [codes, setCodes] = useState<Record<string, string>>({});
+  const act = async (
+    id: string,
+    action: "install" | "login" | "cancel" | "code",
+    code?: string,
+  ) => {
     setError("");
     try {
-      await request(`/api/providers/${id}`, { action });
+      await request(`/api/providers/${id}`, { action, code });
+      if (action === "code") setCodes((value) => ({ ...value, [id]: "" }));
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Request failed.");
@@ -93,6 +100,30 @@ export function ProviderSetup({ selected }: { selected?: string }) {
                     </>
                   )}
                 </small>
+              )}
+              {busy && job.awaitingCode && (
+                <form
+                  className="provider-code"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void act(status.id, "code", codes[status.id] ?? "");
+                  }}
+                >
+                  <Input
+                    value={codes[status.id] ?? ""}
+                    onChange={(event) =>
+                      setCodes({ ...codes, [status.id]: event.target.value })
+                    }
+                    placeholder="Paste the code shown after signing in"
+                    aria-label="Sign-in code"
+                    autoComplete="off"
+                    spellCheck={false}
+                    maxLength={500}
+                  />
+                  <Button type="submit" size="sm">
+                    Submit code
+                  </Button>
+                </form>
               )}
               {!busy && job?.state === "failed" && (
                 <small className="provider-row-error">

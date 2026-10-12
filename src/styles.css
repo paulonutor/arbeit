@@ -1654,3 +1654,8 @@ h1 {
 .project-form select option {
   background: #191e21;
 }
+.provider-code {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}

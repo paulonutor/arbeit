@@ -114,6 +114,7 @@ export interface ProviderJob {
   startedAt: string;
   message: string | null;
   url: string | null;
+  awaitingCode: boolean;
 }
 export interface ProviderStatus {
   id: Provider;

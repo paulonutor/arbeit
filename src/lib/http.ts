@@ -166,6 +166,7 @@ export function api(
     const input = await body(c);
     if (input.action === "install") setup.install(id, runtime.isBusy);
     else if (input.action === "login") setup.login(id);
+    else if (input.action === "code") setup.submitCode(id, input.code);
     else if (input.action === "cancel") setup.cancel(id);
     else throw new RequestError("Invalid provider action.");
     const [status] = await setup.status(id);
